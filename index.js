@@ -296,71 +296,78 @@ const patchApp = async () => {
     await cleanUp()
   }
   
-  // Save email to config
-  config.set('lastEmail', email)
+ // Save email to config
+ config.set('lastEmail', email)
   
-  ;['SIGINT', 'SIGTERM'].forEach(signal => process.on(signal, cleanUp))
-  
-  spinner.text = 'Reading patch file'
-  const patch = fs.readFileSync('patch.js', 'utf-8')
-  
-  spinner.text = 'Applying patch'
-  const wrappedPatch = `;(() => {\n${patch}\n})();`
-  const patchedData = data
-    .replace(
-      'const APP_URL =',
-      `// ------- Injected by HTTP Toolkit Patcher -------\nconst email = \`${email.replace(/`/g, '\\`')}\`\nconst globalProxy = process.env.PROXY ?? \`${globalProxy ? globalProxy.replace(/`/g, '\\`') : ''}\`\n${wrappedPatch}\n// ------- End patched content -------\nconst APP_URL =`
-    )
+ ;['SIGINT', 'SIGTERM'].forEach(signal => process.on(signal, cleanUp))
+ 
+ spinner.text = 'Reading patch file'
+ const patch = fs.readFileSync('patch.js', 'utf-8')
+ 
+ spinner.text = 'Applying patch'
+ const wrappedPatch = `;(() => {\n${patch}\n})();`
+ const patchedData = data
+   .replace(
+     'const APP_URL =',
+     `// ------- Injected by HTTP Toolkit Patcher -------\nconst email = \`${email.replace(/`/g, '\\`')}\`\nconst globalProxy = process.env.PROXY ?? \`${globalProxy ? globalProxy.replace(/`/g, '\\`') : ''}\`\n${wrappedPatch}\n// ------- End patched content -------\nconst APP_URL =`
+   )
 
-  if (data === patchedData || !patchedData) {
-    spinner.fail('Patch failed')
-    await cleanUp()
-  }
+ if (data === patchedData || !patchedData) {
+   spinner.fail('Patch failed')
+   await cleanUp()
+ }
 
-  fs.writeFileSync(indexPath, patchedData, 'utf-8')
-  spinner.succeed('Patched index.js')
-  
-  spinner.text = 'Installing dependencies'
-  try {
-    const proc = spawn('npm install express axios', { cwd: tempPath, stdio: 'inherit', shell: true })
-    activeProcesses.push(proc)
-    await new Promise(resolve => proc.on('close', resolve))
-    activeProcesses.splice(activeProcesses.indexOf(proc), 1)
-    if (isCancelled) return
-    spinner.succeed('Dependencies installed')
-  } catch (e) {
-    spinner.fail('Failed to install dependencies')
-    console.error(e)
-    await cleanUp()
-  }
-  
-  const filePathLock = path.join(tempPath, 'package-lock.json')
-  if (fs.existsSync(filePathLock)) {
-    fs.unlinkSync(filePathLock)
-  }
-  
-  // Create backup using backup manager
-  spinner.text = 'Creating backup'
-  const backupPath = backupManager.createBackup(filePath)
-  spinner.succeed(`Backup created at ${backupPath}`)
-  
-  spinner.text = 'Building app'
-  await asar.createPackage(tempPath, filePath)
-  rm(tempPath)
-  spinner.succeed('HTTP Toolkit patched successfully')
+ fs.writeFileSync(indexPath, patchedData, 'utf-8')
+ spinner.succeed('Patched index.js')
+ 
+ spinner.text = 'Installing dependencies'
+ try {
+   const proc = spawn('npm install express axios https-proxy-agent', { cwd: tempPath, stdio: 'inherit', shell: true })
+   activeProcesses.push(proc)
+   await new Promise(resolve => proc.on('close', resolve))
+   activeProcesses.splice(activeProcesses.indexOf(proc), 1)
+   if (isCancelled) return
+   spinner.succeed('Dependencies installed')
+ } catch (e) {
+   spinner.fail('Failed to install dependencies')
+   console.error(e)
+   await cleanUp()
+ }
+ 
+ const filePathLock = path.join(tempPath, 'package-lock.json')
+ if (fs.existsSync(filePathLock)) {
+   fs.unlinkSync(filePathLock)
+ }
+
+ // Copy patches directory into the app build
+ const patchesSrc = path.join(process.cwd(), 'patches')
+ const patchesDest = path.join(tempPath, 'build', 'patches')
+ if (fs.existsSync(patchesSrc)) {
+   fs.cpSync(patchesSrc, patchesDest, { recursive: true })
+ }
+ 
+ // Create backup using backup manager
+ spinner.text = 'Creating backup'
+ const backupPath = backupManager.createBackup(filePath)
+ spinner.succeed(`Backup created at ${backupPath}`)
+ 
+ spinner.text = 'Building app'
+ await asar.createPackage(tempPath, filePath)
+ rm(tempPath)
+ spinner.succeed('HTTP Toolkit patched successfully')
 }
 
 const handleConfig = async () => {
-  const { action } = await prompts({
-    type: 'select',
-    name: 'action',
-    message: 'What would you like to do?',
-    choices: [
-      { title: 'View current config', value: 'view' },
-      { title: 'Edit config', value: 'edit' },
-      { title: 'Reset to defaults', value: 'reset' }
-    ]
-  })
+ const { action } = await prompts({
+   type: 'select',
+   name: 'action',
+   message: 'What would you like to do?',
+   choices: [
+     { title: 'View current config', value: 'view' },
+     { title: 'Edit config', value: 'edit' },
+     { title: 'Reset to defaults', value: 'reset' }
+   ]
+ })
 
   if (action === 'view') {
     console.log(boxen(JSON.stringify(config.config, null, 2), { 

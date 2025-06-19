@@ -1,7 +1,7 @@
 ;(function () {
   'use strict'
   
-  const { HttpsProxyAgent } = require('https-proxy-agent')
+const { HttpsProxyAgent } = require('https-proxy-agent')
 const axios = require('axios').default
 const electron = require('electron')
 const express = require('express')
@@ -10,9 +10,10 @@ const fsPromises = fs.promises
 const nodePath = require('path')
 const nodeOs = require('os')
 
-function showPatchError(message) {
-  console.error(message)
-  electron.dialog.showErrorBox('Patch Error', message + '\n\nPlease report this issue on the GitHub repository (github.com/XielQs/httptoolkit-pro-patcher)')
+const logger = {
+  info: msg => console.log('[patch]', msg),
+  warn: msg => console.warn('[patch]', msg),
+  error: (msg, err) => console.error('[patch]', msg, err)
 }
 
 const axiosInstance = axios.create({
@@ -133,6 +134,12 @@ app.all('*', async (req, res) => {
         }
       }
     }
+
+    if (pathname.endsWith('.js')) {
+      const source = data.toString()
+      data = applyPatches(source, { logger, version: detectVersion(source) })
+    }
+
     await fsPromises.writeFile(filePath, data)
     console.log(`[Patcher] File downloaded and saved: ${filePath}`)
     res.sendFile(filePath)
@@ -163,7 +170,7 @@ electron.app.on('ready', () => {
 //? Disable caching for all requests
 electron.app.commandLine.appendSwitch('disable-http-cache')
 
-const PATCHES_DIR = path.join(__dirname, 'patches')
+const PATCHES_DIR = nodePath.join(__dirname, 'patches')
 
 function loadPatches() {
   if (!fs.existsSync(PATCHES_DIR)) {
@@ -174,7 +181,7 @@ function loadPatches() {
     .filter(f => f.endsWith('.js'))
     .map(f => {
       try {
-        return require(path.join(PATCHES_DIR, f))
+        return require(nodePath.join(PATCHES_DIR, f))
       } catch (err) {
         logger.error(`Failed to load patch ${f}`, err)
         return null

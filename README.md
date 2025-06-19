@@ -6,7 +6,8 @@ This patcher now supports a modular, robust patching system using both AST-based
 
 ## How It Works
 
-- **patch.js** is the patch loader and applier. It loads all `.js` files in the `patches/` directory and applies them in order to the target file.
+- **patch.js** is the patch loader and applier. At runtime it loads all `.js` files in the `patches/` directory, detects the script version and applies each patch in order to downloaded JavaScript files.
+- **index.js** copies the local `patches/` folder into the application so these patches are available when the app starts.
 - Each patch receives the source code and a context object (with logger and version info), and returns the patched code.
 - Patches can use AST tools ([recast](https://www.npmjs.com/package/recast), [@babel/parser](https://www.npmjs.com/package/@babel/parser)) for robust, version-agnostic code manipulation, or use flexible regex for simple cases.
 - All patches include error handling and fallbacks: if a patch fails, the patcher logs the error and continues with the next patch.
