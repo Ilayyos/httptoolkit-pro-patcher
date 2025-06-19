@@ -3,7 +3,7 @@ import assert from 'node:assert'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { rm } from '../rm.js'
+import { rm } from '../utils.js'
 
 test('rm removes nested directories', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'rm-test-'))

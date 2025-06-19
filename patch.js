@@ -1,13 +1,14 @@
-'use strict'
-
-const { HttpsProxyAgent } = require('https-proxy-agent')
+;(function () {
+  'use strict'
+  
+  const { HttpsProxyAgent } = require('https-proxy-agent')
 const axios = require('axios').default
 const electron = require('electron')
 const express = require('express')
 const fs = require('fs')
 const fsPromises = fs.promises
 const nodePath = require('path')
-const os = require('os')
+const nodeOs = require('os')
 
 function showPatchError(message) {
   console.error(message)
@@ -37,7 +38,7 @@ const hasInternet = async () => {
 }
 
 const port = process.env.PORT || 5067
-const tempPath = nodePath.join(os.tmpdir(), 'httptoolkit-patch')
+const tempPath = nodePath.join(nodeOs.tmpdir(), 'httptoolkit-patch')
 const APP_URL = `http://localhost:${port}`
 
 process.env.APP_URL = APP_URL
@@ -202,16 +203,4 @@ function applyPatches(source, context) {
   return patched
 }
 
-// Example usage: node patch.js path/to/main.js
-if (require.main === module) {
-  const targetFile = process.argv[2]
-  if (!targetFile) {
-    console.error('Usage: node patch.js <target-file>')
-    process.exit(1)
-  }
-  let source = fs.readFileSync(targetFile, 'utf8')
-  const context = { logger, version: detectVersion(source) }
-  const patchedSource = applyPatches(source, context)
-  fs.writeFileSync(targetFile, patchedSource, 'utf8')
-  logger.info('Patching complete.')
-}
+})();

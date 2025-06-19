@@ -9,6 +9,7 @@ export const rm = dirPath => {
     if (fs.lstatSync(entryPath).isDirectory()) rm(entryPath)
     else fs.rmSync(entryPath, { force: true })
   }
+  fs.rmdirSync(dirPath)
 }
 
 export const canWrite = dirPath => {

@@ -305,8 +305,12 @@ const patchApp = async () => {
   const patch = fs.readFileSync('patch.js', 'utf-8')
   
   spinner.text = 'Applying patch'
+  const wrappedPatch = `;(() => {\n${patch}\n})();`
   const patchedData = data
-    .replace('const APP_URL =', `// ------- Injected by HTTP Toolkit Patcher -------\nconst email = \`${email.replace(/`/g, '\\`')}\`\nconst globalProxy = process.env.PROXY ?? \`${globalProxy ? globalProxy.replace(/`/g, '\\`') : ''}\`\n${patch}\n// ------- End patched content -------\nconst APP_URL =`)
+    .replace(
+      'const APP_URL =',
+      `// ------- Injected by HTTP Toolkit Patcher -------\nconst email = \`${email.replace(/`/g, '\\`')}\`\nconst globalProxy = process.env.PROXY ?? \`${globalProxy ? globalProxy.replace(/`/g, '\\`') : ''}\`\n${wrappedPatch}\n// ------- End patched content -------\nconst APP_URL =`
+    )
 
   if (data === patchedData || !patchedData) {
     spinner.fail('Patch failed')
