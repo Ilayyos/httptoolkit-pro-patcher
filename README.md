@@ -4,6 +4,17 @@
 
 This is a simple tool to patch HTTP Toolkit to enable the Pro features without a license or subscription. **But please consider supporting the developer by purchasing a license if you find the HTTP Toolkit useful.**
 
+## Modular, Version-Agnostic Patching System
+
+This patcher now supports a modular, robust patching system using both AST-based and flexible regex-based patching. Each patch is a separate file in the `patches/` directory, making it easy to add, remove, or update patches for new versions of HTTP Toolkit.
+
+## How It Works
+
+- **patch.js** is the patch loader and applier. It loads all `.js` files in the `patches/` directory and applies them in order to the target file.
+- Each patch receives the source code and a context object (with logger and version info), and returns the patched code.
+- Patches can use AST tools ([recast](https://www.npmjs.com/package/recast), [@babel/parser](https://www.npmjs.com/package/@babel/parser)) for robust, version-agnostic code manipulation, or use flexible regex for simple cases.
+- All patches include error handling and fallbacks: if a patch fails, the patcher logs the error and continues with the next patch.
+
 ## Usage
 
 1. Clone this repository using `git clone https://github.com/IPTVmanreal/httptoolkit-pro-patcher.git`
@@ -49,13 +60,40 @@ You can also set the `PROXY` environment variable to use a proxy. For example, `
 
 ![HTTP Toolkit Proxy Settings](https://i.imgur.com/Ti2vIgb.png)
 
-## How it works
+## Example Patch: Pro Plan Injection
 
-This tool simply creates a server *(at port 5067)* and acts as like a MITM proxy to intercept and download app files ([app.httptoolkit.tech](https://app.httptoolkit.tech)) and patches the `main.js` file to enable the Pro features. For more detailed information, see the [patch's source code](patch.js) or the [patcher](index.js) file.
+See `patches/patch-pro-plan.js` for an example of using AST to inject a static property into a class.
 
-***Tip**: You can also change the `PORT` environment variable to use a different port. For example, `PORT=8080 httptoolkit` or `PORT=8080 node . start`.*
+## Error Handling & Fallbacks
 
-**Note**: This tool does not modify the HTTP Toolkit files. It only intercepts and modifies the files in memory (and saves the modified files to cache).
+- If a patch throws an error, it is logged and the patcher continues with the next patch.
+- If a patch cannot find the code to patch, it logs a warning and returns the original source.
+
+## Context Object
+
+Each patch receives a `context` object:
+- `context.logger`: Logging methods (`info`, `warn`, `error`)
+- `context.version`: Detected version of the target file (if available)
+
+## Why Modular & AST-Based?
+
+- **Version-agnostic:** Patches are robust to code changes between versions.
+- **Easy to extend:** Add new patches for new features or versions without touching the core patcher.
+- **Safe:** Errors in one patch do not break the patching process.
+
+## Advanced: Writing AST Patches
+
+- Use [recast](https://www.npmjs.com/package/recast) and [@babel/parser](https://www.npmjs.com/package/@babel/parser) to parse, traverse, and modify JavaScript code as an AST.
+- See `patches/patch-pro-plan.js` and `patches/patch-bypass-telemetry.js` for examples.
+
+## Patch Management Best Practices
+
+- **Test patches on a staging copy before deploying to production.**
+- **Keep backups of original files.**
+- **Document each patch's purpose and logic.**
+- **Monitor for new versions and update patches as needed.**
+
+For more on patch management process, see [Puppet's Patch Management Process Guide](https://www.puppet.com/blog/patch-management-process).
 
 ## Requirements
 

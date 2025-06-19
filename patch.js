@@ -1,8 +1,13 @@
+'use strict'
+
 const { HttpsProxyAgent } = require('https-proxy-agent')
 const axios = require('axios').default
 const electron = require('electron')
 const express = require('express')
 const fs = require('fs')
+const fsPromises = fs.promises
+const nodePath = require('path')
+const os = require('os')
 
 function showPatchError(message) {
   console.error(message)
@@ -11,8 +16,9 @@ function showPatchError(message) {
 
 const axiosInstance = axios.create({
   baseURL: 'https://app.httptoolkit.tech',
+  timeout: 15000,
   httpsAgent:
-    globalProxy
+    typeof globalProxy === 'string' && globalProxy
       ? new HttpsProxyAgent(
           globalProxy.startsWith('http')
             ? globalProxy.replace(/^http:/, 'https:')
@@ -21,12 +27,20 @@ const axiosInstance = axios.create({
       : undefined //? Use proxy if set (globalProxy is injected by the patcher)
 })
 
-const hasInternet = () => axiosInstance.head('/').then(() => true).catch(() => false)
+const hasInternet = async () => {
+  try {
+    await axiosInstance.head('/')
+    return true
+  } catch {
+    return false
+  }
+}
 
 const port = process.env.PORT || 5067
-const tempPath = path.join(os.tmpdir(), 'httptoolkit-patch')
+const tempPath = nodePath.join(os.tmpdir(), 'httptoolkit-patch')
+const APP_URL = `http://localhost:${port}`
 
-process.env.APP_URL = `http://localhost:${port}`
+process.env.APP_URL = APP_URL
 console.log(`[Patcher] Selected temp path: ${tempPath}`)
 
 const app = express()
@@ -36,17 +50,18 @@ app.disable('x-powered-by')
 app.all('*', async (req, res) => {
   console.log(`[Patcher] Request to: ${req.url}`)
 
-  let filePath = path.join(tempPath, new URL(req.url, process.env.APP_URL).pathname === '/' ? 'index.html' : new URL(req.url, process.env.APP_URL).pathname)
-  if (['/view', '/intercept', '/settings', '/mock'].includes(new URL(req.url, process.env.APP_URL).pathname)) {
+  const { pathname } = new URL(req.url, APP_URL)
+  let filePath = nodePath.join(tempPath, pathname === '/' ? 'index.html' : pathname)
+  if (['/view', '/intercept', '/settings', '/mock'].includes(pathname)) {
     filePath += '.html'
   }
 
   //? Prevent loading service worker to avoid caching issues
-  if (new URL(req.url, process.env.APP_URL).pathname === '/ui-update-worker.js') return res.status(404).send('Not found')
+  if (pathname === '/ui-update-worker.js') return res.status(404).send('Not found')
 
   if (!fs.existsSync(tempPath)) {
     console.log(`[Patcher] Temp path not found, creating: ${tempPath}`)
-    fs.mkdirSync(tempPath)
+    fs.mkdirSync(tempPath, { recursive: true })
   }
 
   if (!(await hasInternet())) {
@@ -65,7 +80,8 @@ app.all('*', async (req, res) => {
     if (fs.existsSync(filePath)) { //? Check if file exists in temp path
       try {
         const remoteDate = await axiosInstance.head(req.url).then(res => new Date(res.headers['last-modified']))
-        if (remoteDate < new Date(fs.statSync(filePath).mtime)) {
+        const localDate = (await fsPromises.stat(filePath)).mtime
+        if (remoteDate <= localDate) {
           console.log(`[Patcher] File not changed, serving from temp path`)
           res.sendFile(filePath)
           return
@@ -79,16 +95,9 @@ app.all('*', async (req, res) => {
 
     for (const [key, value] of Object.entries(remoteFile.headers)) res.setHeader(key, value)
 
-    const recursiveMkdir = dir => {
-      if (!fs.existsSync(dir)) {
-        recursiveMkdir(path.dirname(dir))
-        fs.mkdirSync(dir)
-      }
-    }
-
-    recursiveMkdir(path.dirname(filePath))
+    fs.mkdirSync(nodePath.dirname(filePath), { recursive: true })
     let data = remoteFile.data
-    if (new URL(req.url, process.env.APP_URL).pathname === '/main.js') { //? Patch main.js
+    if (pathname === '/main.js') { //? Patch main.js
       console.log(`[Patcher] Patching main.js`)
       res.setHeader('Cache-Control', 'no-store') //? Prevent caching
 
@@ -108,7 +117,7 @@ app.all('*', async (req, res) => {
             email, //? Injected by the patcher
             subscription: {
               status: 'active',
-              quanity: 1,
+              quantity: 1,
               expiry: new Date('9999-12-31').toISOString(),
               sku: 'pro-annual',
               plan: 'pro-annual',
@@ -123,7 +132,7 @@ app.all('*', async (req, res) => {
         }
       }
     }
-    fs.writeFileSync(filePath, data)
+    await fsPromises.writeFile(filePath, data)
     console.log(`[Patcher] File downloaded and saved: ${filePath}`)
     res.sendFile(filePath)
   } catch (e) {
@@ -137,9 +146,9 @@ app.listen(port, () => console.log(`[Patcher] Server listening on port ${port}`)
 electron.app.on('ready', () => {
   //? Patching CORS headers to allow requests from localhost
   electron.session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    //* Blocking unwanted requests to prevent tracking
-    const blockedHosts = ['events.httptoolkit.tech']
-    if (blockedHosts.includes(new URL(details.url).hostname) || details.url.includes('sentry')) return callback({ cancel: true })
+    //* Blocking unwanted requests to prevent tracking␊
+    const blockedHosts = new Set(['events.httptoolkit.tech'])
+    if (blockedHosts.has(new URL(details.url).hostname) || details.url.includes('sentry')) return callback({ cancel: true })
     details.requestHeaders.Origin = 'https://app.httptoolkit.tech'
     callback({ requestHeaders: details.requestHeaders })
   })
@@ -152,3 +161,57 @@ electron.app.on('ready', () => {
 
 //? Disable caching for all requests
 electron.app.commandLine.appendSwitch('disable-http-cache')
+
+const PATCHES_DIR = path.join(__dirname, 'patches')
+
+function loadPatches() {
+  if (!fs.existsSync(PATCHES_DIR)) {
+    logger.warn('Patches directory does not exist. No patches will be applied.')
+    return []
+  }
+  return fs.readdirSync(PATCHES_DIR)
+    .filter(f => f.endsWith('.js'))
+    .map(f => {
+      try {
+        return require(path.join(PATCHES_DIR, f))
+      } catch (err) {
+        logger.error(`Failed to load patch ${f}`, err)
+        return null
+      }
+    })
+    .filter(Boolean)
+}
+
+function detectVersion(source) {
+  // Try to detect version from code (customize as needed)
+  const versionMatch = source.match(/version\s*[:=]\s*['"]([\d.]+)['"]/);
+  return versionMatch ? versionMatch[1] : 'unknown';
+}
+
+function applyPatches(source, context) {
+  let patched = source
+  for (const patch of loadPatches()) {
+    try {
+      patched = patch(patched, context)
+      context.logger.info(`Applied patch: ${patch.name || 'anonymous'}`)
+    } catch (err) {
+      context.logger.error(`Patch ${patch.name || 'unknown'} failed`, err)
+      // Fallback: continue with previous patched code
+    }
+  }
+  return patched
+}
+
+// Example usage: node patch.js path/to/main.js
+if (require.main === module) {
+  const targetFile = process.argv[2]
+  if (!targetFile) {
+    console.error('Usage: node patch.js <target-file>')
+    process.exit(1)
+  }
+  let source = fs.readFileSync(targetFile, 'utf8')
+  const context = { logger, version: detectVersion(source) }
+  const patchedSource = applyPatches(source, context)
+  fs.writeFileSync(targetFile, patchedSource, 'utf8')
+  logger.info('Patching complete.')
+}
